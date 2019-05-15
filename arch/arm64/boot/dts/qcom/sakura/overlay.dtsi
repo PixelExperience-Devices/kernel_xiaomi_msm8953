@@ -6,3 +6,4 @@
 #include "sakura-mdss.dtsi"
 #include "sakura-qrd.dtsi"
 #include "sakura-camera.dtsi"
+#include "sakura-gpu-oc.dtsi"
