@@ -207,10 +207,10 @@ static ssize_t fts_gesture_store(struct device *dev,
 
 	if (FTS_SYSFS_ECHO_ON(buf)) {
 		FTS_INFO("[GESTURE]enable gesture");
-		fts_gesture_data.mode = ENABLE;
+		fts_gesture_data.mode = 1;
 	} else if (FTS_SYSFS_ECHO_OFF(buf)) {
 		FTS_INFO("[GESTURE]disable gesture");
-		fts_gesture_data.mode = DISABLE;
+		fts_gesture_data.mode = 0;
 	}
 
 	mutex_unlock(&fts_input_dev->mutex);
