@@ -654,7 +654,7 @@ int fts_gesture_init(struct input_dev *input_dev, struct i2c_client *client)
 
 	fts_create_gesture_sysfs(client);
 	fts_input_symlink(client);
-	fts_gesture_data.mode = 1;
+	fts_gesture_data.mode = 0;
 	fts_gesture_data.active = 0;
 	FTS_FUNC_EXIT();
 
