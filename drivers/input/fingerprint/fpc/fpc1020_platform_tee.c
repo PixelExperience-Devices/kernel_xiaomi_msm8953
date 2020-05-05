@@ -600,7 +600,7 @@ static irqreturn_t fpc1020_irq_handler(int irq, void *handle)
 {
 	struct fpc1020_data *fpc1020 = handle;
 
-	dev_err(fpc1020->dev, "%s\n", __func__);
+	dev_dbg(fpc1020->dev, "%s\n", __func__);
 
 
 	if (atomic_read(&fpc1020->wakeup_enabled)) {
