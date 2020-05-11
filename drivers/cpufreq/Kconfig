@@ -382,7 +382,13 @@ config TA_STUNE_BOOST
         default "15"
         help
           SchedTune boost value for the foreground app. This alters the
-          perceived load in order to bias CPU and frequency selection.	  
+          perceived load in order to bias CPU and frequency selection.	
+
+config MAX_BOOST_FREQ
+	int "CPU max-boost freq"
+	default "0"
+	help
+	Max-boost frequency for the CPU.		  
 
 config INPUT_BOOST_FREQ
 	int "CPU input boost freq"

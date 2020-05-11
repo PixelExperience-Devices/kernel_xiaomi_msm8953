@@ -20,6 +20,25 @@
 #include <uapi/linux/sched/types.h>
 #endif
 
+static unsigned int input_boost_freq __read_mostly =
+	CONFIG_INPUT_BOOST_FREQ;
+static unsigned int max_boost_freq __read_mostly =
+	CONFIG_MAX_BOOST_FREQ;
+static unsigned int boost_min_freq __read_mostly =
+        CONFIG_BASE_BOOST_FREQ;
+
+static unsigned short input_boost_duration __read_mostly =
+	CONFIG_INPUT_BOOST_DURATION_MS;
+static unsigned short wake_boost_duration __read_mostly =
+	CONFIG_WAKE_BOOST_DURATION_MS;
+
+module_param(input_boost_freq, uint, 0644);
+module_param(max_boost_freq, uint, 0644);
+module_param_named(remove_input_boost_freq, boost_min_freq, uint, 0644);
+
+module_param(input_boost_duration, short, 0644);
+module_param(wake_boost_duration, short, 0644);
+
 #ifdef CONFIG_DYNAMIC_STUNE_BOOST
 static __read_mostly int stune_boost = CONFIG_TA_STUNE_BOOST;
 module_param_named(dynamic_stune_boost, stune_boost, int, 0644);
@@ -42,6 +61,7 @@ struct boost_drv {
 	atomic_long_t max_boost_expires;
 	unsigned long state;
 	unsigned long last_input_jiffies;
+
 	bool stune_active;
 	int stune_slot;
 };
@@ -61,7 +81,7 @@ static unsigned int get_input_boost_freq(struct cpufreq_policy *policy)
 {
 	unsigned int freq;
 
-	freq = CONFIG_INPUT_BOOST_FREQ;
+	freq = input_boost_freq;
 
 	return min(freq, policy->max);
 }
@@ -70,7 +90,7 @@ static unsigned int get_max_boost_freq(struct cpufreq_policy *policy)
 {
 	unsigned int freq;
 
-	freq = CONFIG_MAX_BOOST_FREQ;
+	freq = max_boost_freq;
 
 	return min(freq, policy->max);
 }
@@ -82,7 +102,6 @@ static unsigned int get_min_freq(struct cpufreq_policy *policy)
 	freq = boost_min_freq;
 
 	return max(freq, policy->cpuinfo.min_freq);
-
 }
 
 static void update_online_cpu_policy(void)
@@ -103,6 +122,7 @@ bool cpu_input_boost_within_input(unsigned long timeout_ms)
 	return time_before(jiffies, b->last_input_jiffies +
 			   msecs_to_jiffies(timeout_ms));
 }
+
 static void update_stune_boost(struct boost_drv *b, int value)
 {
 #ifdef CONFIG_DYNAMIC_STUNE_BOOST
@@ -125,9 +145,9 @@ static void __cpu_input_boost_kick(struct boost_drv *b)
 	if (test_bit(SCREEN_OFF, &b->state))
 		return;
 
-    if (!input_boost_duration)
+	if (!input_boost_duration)
 		return;
-	
+
 	set_bit(INPUT_BOOST, &b->state);
 	if (!mod_delayed_work(system_unbound_wq, &b->input_unboost,
 			      msecs_to_jiffies(input_boost_duration)))
@@ -256,7 +276,7 @@ static int cpu_notifier_cb(struct notifier_block *nb, unsigned long action,
 	}
 
 	/* Unboost when the screen is off */
-    if (test_bit(SCREEN_OFF, &b->state)) {
+	if (test_bit(SCREEN_OFF, &b->state)) {
 		policy->min = get_min_freq(policy);
 		clear_stune_boost(b);
 		return NOTIFY_OK;
@@ -275,11 +295,12 @@ static int cpu_notifier_cb(struct notifier_block *nb, unsigned long action,
 	 */
 	if (test_bit(INPUT_BOOST, &b->state)) {
 		policy->min = get_input_boost_freq(policy);
-	update_stune_boost(b, stune_boost);
+		update_stune_boost(b, stune_boost);
 	} else {
-		policy->min = policy->cpuinfo.min_freq;
-         clear_stune_boost(b);
-	} 
+		policy->min = get_min_freq(policy);
+		clear_stune_boost(b);
+	}
+
 	return NOTIFY_OK;
 }
 
