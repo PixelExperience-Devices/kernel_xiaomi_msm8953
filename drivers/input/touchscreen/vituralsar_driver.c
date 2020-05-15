@@ -5,8 +5,6 @@
  * Created on September 2, 2015, 10:22 AM
  */
 
-#define DEBUG
-
 /* Standard Linux includes */
 #include <linux/init.h>
 #include <linux/module.h>
@@ -146,9 +144,8 @@ static s8 sar_request_input_dev(struct vituralsar_data *sdata)
 	s8 ret = -1;
 
 	sdata->input_dev = input_allocate_device();
-	if (sdata->input_dev == NULL)
-	{
-		printk("Failed to allocate input device.");
+	if (sdata->input_dev == NULL) {
+		pr_debug("Failed to allocate input device.");
 		return -ENOMEM;
 	}
 
