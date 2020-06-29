@@ -4011,4 +4011,12 @@ static inline int set_stune_boost(char *st_name, int boost, int *boost_default)
 
 extern DEFINE_PER_CPU_READ_MOSTLY(int, sched_load_boost);
 
+DECLARE_PER_CPU(unsigned long, thermal_pressure);
+
+static inline unsigned long topology_get_thermal_pressure(int cpu)
+{
+	return per_cpu(thermal_pressure, cpu);
+}
+
+void arch_set_thermal_pressure(struct cpumask *cpus,  unsigned long th_pressure);
 #endif
