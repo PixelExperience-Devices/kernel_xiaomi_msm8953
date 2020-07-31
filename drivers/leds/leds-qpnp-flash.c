@@ -174,6 +174,10 @@ struct flash_regulator_data {
 	u32			max_volt_uv;
 };
 
+char flashlight[]={"flashlight"};
+char flashlight_switch[]={"led:switch"};
+struct led_trigger *flashlight_switch_trigger=NULL;
+
 /*
  * Configurations for each individual LED
  */
@@ -1868,6 +1872,13 @@ static void qpnp_flash_led_brightness_set(struct led_classdev *led_cdev,
 	queue_work(led->ordered_workq, &flash_node->work);
 }
 
+static void mido_flash_led_brightness_set(struct led_classdev *led_cdev,
+						enum led_brightness value)
+{
+	qpnp_flash_led_brightness_set(led_cdev,value);
+	led_trigger_event(flashlight_switch_trigger,(value?1:0));
+}
+
 static int qpnp_flash_led_init_settings(struct qpnp_flash_led *led)
 {
 	int rc;
@@ -2529,7 +2540,12 @@ static int qpnp_flash_led_probe(struct platform_device *pdev)
 					"Unable to read flash name\n");
 			return rc;
 		}
-
+		
+		if( !strncmp(led->flash_node[i].cdev.name,flashlight,strlen(flashlight)) ) //flashlight
+		{
+			led->flash_node[i].cdev.brightness_set = mido_flash_led_brightness_set;
+		}
+		
 		rc = of_property_read_string(temp, "qcom,default-led-trigger",
 				&led->flash_node[i].cdev.default_trigger);
 		if (rc < 0) {
@@ -2555,7 +2571,12 @@ static int qpnp_flash_led_probe(struct platform_device *pdev)
 			dev_err(&pdev->dev, "Unable to register led\n");
 			goto error_led_register;
 		}
-
+		
+		if( !strncmp(led->flash_node[i].cdev.name,flashlight_switch,strlen(flashlight_switch)) ) //flashlight
+		{
+			flashlight_switch_trigger=led->flash_node[i].cdev.trigger;
+		}
+		
 		led->flash_node[i].cdev.dev->of_node = temp;
 
 		rc = qpnp_flash_led_parse_each_led_dt(led, &led->flash_node[i]);
