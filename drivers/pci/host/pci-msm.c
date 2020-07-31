@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2019, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2020, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1332,6 +1332,7 @@ static void msm_pcie_sel_debug_testcase(struct msm_pcie_dev_t *dev,
 	static void __iomem *loopback_lbar_vir;
 	int ret, i;
 	u32 base_sel_size = 0;
+	u32 wr_ofst = 0;
 
 	switch (testcase) {
 	case MSM_PCIE_OUTPUT_PCIE_INFO:
@@ -1563,22 +1564,24 @@ static void msm_pcie_sel_debug_testcase(struct msm_pcie_dev_t *dev,
 			break;
 		}
 
+		wr_ofst = wr_offset;
+
 		PCIE_DBG_FS(dev,
 			"base: %s: 0x%pK\nwr_offset: 0x%x\nwr_mask: 0x%x\nwr_value: 0x%x\n",
 			dev->res[base_sel - 1].name,
 			dev->res[base_sel - 1].base,
-			wr_offset, wr_mask, wr_value);
+			wr_ofst, wr_mask, wr_value);
 
 		base_sel_size = resource_size(dev->res[base_sel - 1].resource);
 
-		if (wr_offset >  base_sel_size - 4 ||
-			msm_pcie_check_align(dev, wr_offset))
+		if (wr_ofst >  base_sel_size - 4 ||
+			msm_pcie_check_align(dev, wr_ofst))
 			PCIE_DBG_FS(dev,
 				"PCIe: RC%d: Invalid wr_offset: 0x%x. wr_offset should be no more than 0x%x\n",
-				dev->rc_idx, wr_offset, base_sel_size - 4);
+				dev->rc_idx, wr_ofst, base_sel_size - 4);
 		else
 			msm_pcie_write_reg_field(dev->res[base_sel - 1].base,
-				wr_offset, wr_mask, wr_value);
+				wr_ofst, wr_mask, wr_value);
 
 		break;
 	case MSM_PCIE_DUMP_PCIE_REGISTER_SPACE:
@@ -4986,29 +4989,34 @@ again:
 static int arch_setup_msi_irq_default(struct pci_dev *pdev,
 		struct msi_desc *desc, int nvec)
 {
-	int irq;
+	int irq, index, firstirq = 0;
 	struct msi_msg msg;
 	struct msm_pcie_dev_t *dev = PCIE_BUS_PRIV_DATA(pdev->bus);
 
 	PCIE_DBG(dev, "RC%d\n", dev->rc_idx);
 
-	irq = msm_pcie_create_irq(dev);
+	for (index = 0; index < nvec; index++) {
+		irq = msm_pcie_create_irq(dev);
 
-	PCIE_DBG(dev, "IRQ %d is allocated.\n", irq);
+		PCIE_DBG(dev, "IRQ %d is allocated.\n", irq);
 
-	if (irq < 0)
-		return irq;
+		if (irq < 0)
+			return irq;
 
-	PCIE_DBG(dev, "irq %d allocated\n", irq);
+		if (index == 0)
+			firstirq = irq;
 
-	irq_set_chip_data(irq, pdev);
-	irq_set_msi_desc(irq, desc);
+		irq_set_msi_desc_off(firstirq, index, desc);
+	}
 
+	PCIE_DBG(dev, "firstirq:%d\n", firstirq);
+
+	irq_set_chip_data(firstirq, pdev);
 	/* write msi vector and data */
 	msg.address_hi = 0;
 	msg.address_lo = MSM_PCIE_MSI_PHY;
-	msg.data = irq - irq_find_mapping(dev->irq_domain, 0);
-	write_msi_msg(irq, &msg);
+	msg.data = firstirq - irq_find_mapping(dev->irq_domain, 0);
+	write_msi_msg(firstirq, &msg);
 
 	return 0;
 }
@@ -5186,7 +5194,6 @@ static const struct irq_domain_ops msm_pcie_msi_ops = {
 static int32_t msm_pcie_irq_init(struct msm_pcie_dev_t *dev)
 {
 	int rc;
-	int msi_start =  0;
 	struct device *pdev = &dev->pdev->dev;
 
 	PCIE_DBG(dev, "RC%d\n", dev->rc_idx);
@@ -5316,8 +5323,6 @@ static int32_t msm_pcie_irq_init(struct msm_pcie_dev_t *dev)
 
 			return PTR_ERR(dev->irq_domain);
 		}
-
-		msi_start = irq_create_mapping(dev->irq_domain, 0);
 	}
 
 	return 0;
@@ -5545,7 +5550,7 @@ static void msm_pcie_config_link_pm_rc(struct msm_pcie_dev_t *dev,
 {
 	bool child_l0s_enable = 0, child_l1_enable = 0, child_l1ss_enable = 0;
 
-	if (!pdev->subordinate || !(&pdev->subordinate->devices)) {
+	if (!pdev->subordinate || list_empty(&pdev->subordinate->devices)) {
 		PCIE_DBG(dev,
 			"PCIe: RC%d: no device connected to root complex\n",
 			dev->rc_idx);

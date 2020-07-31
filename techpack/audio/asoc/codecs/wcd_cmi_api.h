@@ -28,8 +28,8 @@ enum cmi_api_event {
 };
 
 struct cmi_api_notification {
-	int event;
-	int result;
+	enum cmi_api_event event;
+	enum cmi_api_result result;
 	void *message;
 };
 

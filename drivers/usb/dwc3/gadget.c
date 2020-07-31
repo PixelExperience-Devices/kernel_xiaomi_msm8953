@@ -903,6 +903,7 @@ static struct usb_request *dwc3_gadget_ep_alloc_request(struct usb_ep *ep,
 
 	req->epnum	= dep->number;
 	req->dep	= dep;
+	req->request.dma = DMA_ERROR_CODE;
 
 	dep->allocated_requests++;
 
@@ -2734,17 +2735,15 @@ static void dwc3_gsi_ep_transfer_complete(struct dwc3 *dwc, struct dwc3_ep *dep)
 	struct dwc3_trb *trb;
 	dma_addr_t offset;
 
+	/*
+	 * Doorbell needs to be rung with the next TRB that is going to be
+	 * processed by hardware.
+	 * So, if 'n'th TRB got completed then ring doorbell with (n+1) TRB.
+	 */
+	dwc3_ep_inc_trb(dep, &dep->trb_dequeue);
 	trb = &dep->trb_pool[dep->trb_dequeue];
-	while (trb->ctrl & DWC3_TRBCTL_LINK_TRB) {
-		dwc3_ep_inc_trb(dep, &dep->trb_dequeue);
-		trb = &dep->trb_pool[dep->trb_dequeue];
-	}
-
-	if (!(trb->ctrl & DWC3_TRB_CTRL_HWO)) {
-		offset = dwc3_trb_dma_offset(dep, trb);
-		usb_gsi_ep_op(ep, (void *)&offset, GSI_EP_OP_UPDATE_DB);
-		dwc3_ep_inc_trb(dep, &dep->trb_dequeue);
-	}
+	offset = dwc3_trb_dma_offset(dep, trb);
+	usb_gsi_ep_op(ep, (void *)&offset, GSI_EP_OP_UPDATE_DB);
 }
 
 static void dwc3_endpoint_transfer_complete(struct dwc3 *dwc,
@@ -3043,11 +3042,9 @@ static void dwc3_stop_active_transfers(struct dwc3 *dwc)
 		if (!(dep->flags & DWC3_EP_ENABLED))
 			continue;
 
-		if (dep->endpoint.ep_type == EP_TYPE_GSI && dep->direction)
-			dwc3_notify_event(dwc,
-					DWC3_CONTROLLER_NOTIFY_CLEAR_DB, 0);
 		dwc3_remove_requests(dwc, dep);
 	}
+	dwc3_notify_event(dwc, DWC3_CONTROLLER_NOTIFY_CLEAR_DB, 0);
 	dbg_log_string("DONE");
 }
 
@@ -3761,6 +3758,8 @@ static irqreturn_t dwc3_check_event_buf(struct dwc3 *dwc)
 	u32 reg;
 
 	evt = dwc->ev_buf;
+	if (!evt)
+		return IRQ_NONE;
 
 	/* Controller is being halted, ignore the interrupts */
 	if (!dwc->pullups_connected) {
@@ -3922,7 +3921,6 @@ int dwc3_gadget_init(struct dwc3 *dwc)
 	dwc->gadget.speed		= USB_SPEED_UNKNOWN;
 	dwc->gadget.sg_supported	= true;
 	dwc->gadget.name		= "dwc3-gadget";
-	dwc->gadget.is_otg		= dwc->dr_mode == USB_DR_MODE_OTG;
 	dwc->gadget.l1_supported	= !dwc->usb2_l1_disable;
 
 	/*

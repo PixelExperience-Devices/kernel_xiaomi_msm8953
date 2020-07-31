@@ -1198,6 +1198,7 @@ void add_interrupt_randomness(int irq, int irq_flags)
 	__u64			ip;
 	unsigned long		seed;
 	int			credit = 0;
+	unsigned long		flags;
 
 	if (cycles == 0)
 		cycles = get_reg(fast_pool, regs);
@@ -1228,7 +1229,7 @@ void add_interrupt_randomness(int irq, int irq_flags)
 		return;
 
 	r = &input_pool;
-	if (!spin_trylock(&r->lock))
+	if (!spin_trylock_irqsave(&r->lock, flags))
 		return;
 
 	fast_pool->last = now;
@@ -1244,7 +1245,7 @@ void add_interrupt_randomness(int irq, int irq_flags)
 		__mix_pool_bytes(r, &seed, sizeof(seed));
 		credit = 1;
 	}
-	spin_unlock(&r->lock);
+	spin_unlock_irqrestore(&r->lock, flags);
 
 	fast_pool->count = 0;
 
@@ -1779,7 +1780,7 @@ _random_read(int nonblock, char __user *buf, size_t nbytes)
 	}
 }
 
-static ssize_t
+static ssize_t __maybe_unused
 random_read(struct file *file, char __user *buf, size_t nbytes, loff_t *ppos)
 {
 	return _random_read(file->f_flags & O_NONBLOCK, buf, nbytes);
@@ -1928,7 +1929,7 @@ static int random_fasync(int fd, struct file *filp, int on)
 }
 
 const struct file_operations random_fops = {
-	.read  = random_read,
+	.read  = urandom_read,
 	.write = random_write,
 	.poll  = random_poll,
 	.unlocked_ioctl = random_ioctl,
@@ -2128,15 +2129,6 @@ u64 get_random_u64(void)
 	u64 ret;
 	struct batched_entropy *batch;
 
-#if BITS_PER_LONG == 64
-	if (arch_get_random_long((unsigned long *)&ret))
-		return ret;
-#else
-	if (arch_get_random_long((unsigned long *)&ret) &&
-	    arch_get_random_long((unsigned long *)&ret + 1))
-	    return ret;
-#endif
-
 	batch = &get_cpu_var(batched_entropy_u64);
 	if (batch->position % ARRAY_SIZE(batch->entropy_u64) == 0) {
 		extract_crng((u8 *)batch->entropy_u64);
@@ -2153,9 +2145,6 @@ u32 get_random_u32(void)
 {
 	u32 ret;
 	struct batched_entropy *batch;
-
-	if (arch_get_random_int(&ret))
-		return ret;
 
 	batch = &get_cpu_var(batched_entropy_u32);
 	if (batch->position % ARRAY_SIZE(batch->entropy_u32) == 0) {
