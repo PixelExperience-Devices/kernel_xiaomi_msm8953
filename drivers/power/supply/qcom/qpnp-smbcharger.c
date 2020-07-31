@@ -1,5 +1,5 @@
 /* Copyright (c) 2014-2016, 2018-2019 The Linux Foundation. All rights reserved.
- *
+ * Copyright (C) 2018 XiaoMi, Inc. 
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
  * only version 2 as published by the Free Software Foundation.
@@ -452,7 +452,7 @@ module_param_named(
 	int, 00600
 );
 
-static int smbchg_default_hvdcp_icl_ma = 2500;
+static int smbchg_default_hvdcp_icl_ma = 1800;
 module_param_named(
 	default_hvdcp_icl_ma, smbchg_default_hvdcp_icl_ma,
 	int, 00600
@@ -464,7 +464,7 @@ module_param_named(
 	int, 00600
 );
 
-static int smbchg_default_dcp_icl_ma = 1800;
+static int smbchg_default_dcp_icl_ma = 2000;
 module_param_named(
 	default_dcp_icl_ma, smbchg_default_dcp_icl_ma,
 	int, 00600
@@ -921,12 +921,17 @@ static int get_prop_batt_status(struct smbchg_chip *chip)
 		return POWER_SUPPLY_STATUS_UNKNOWN;
 	}
 
-	if (reg & BAT_TCC_REACHED_BIT)
+	if (reg & BAT_TCC_REACHED_BIT && !chip->batt_warm)
 		return POWER_SUPPLY_STATUS_FULL;
 
+	else if (reg & BAT_TCC_REACHED_BIT && chip->batt_warm)
+		    return POWER_SUPPLY_STATUS_CHARGING;
+		    
 	chg_inhibit = reg & CHG_INHIBIT_BIT;
-	if (chg_inhibit)
+	if (chg_inhibit && !chip->batt_warm)
 		return POWER_SUPPLY_STATUS_FULL;
+else if (chg_inhibit && chip->batt_warm)
+		return POWER_SUPPLY_STATUS_CHARGING;		
 
 	rc = smbchg_read(chip, &reg, chip->chgr_base + CHGR_STS, 1);
 	if (rc < 0) {
@@ -2903,14 +2908,21 @@ static int set_usb_current_limit_vote_cb(struct votable *votable,
 	return 0;
 }
 
+#define		PCBA_V1_IN		35
+#define		PCBA_V2_IN		38
+#define		PCBA_V2_CN		36
+
 static int smbchg_system_temp_level_set(struct smbchg_chip *chip,
 								int lvl_sel)
 {
 	int rc = 0;
 	int prev_therm_lvl;
 	int thermal_icl_ma;
-	unsigned int	hvdcp_thermal_mitigation[7] = {2500, 2500, 1500, 1000, 1000, 500, 0};
+	unsigned int	India_thermal_mitigation[7] = {2500, 2500, 1500, 1000, 1000, 500, 0};
 
+	int *pcba_config = NULL;
+	pcba_config = (int *)smem_find(SMEM_ID_VENDOR1, sizeof(int), 0, SMEM_ANY_HOST_FLAG);
+	
 	if (!chip->thermal_mitigation) {
 		dev_err(chip->dev, "Thermal mitigation not supported\n");
 		return -EINVAL;
@@ -2968,8 +2980,13 @@ static int smbchg_system_temp_level_set(struct smbchg_chip *chip,
 		thermal_icl_ma =
 			(int)hvdcp_thermal_mitigation[chip->therm_lvl_sel];
 		} else{
-		thermal_icl_ma =
-			(int)chip->thermal_mitigation[chip->therm_lvl_sel];
+		if (*(pcba_config) == PCBA_V1_IN
+				|| *(pcba_config) == PCBA_V2_IN) {
+			thermal_icl_ma =
+				(int)India_thermal_mitigation[chip->therm_lvl_sel];
+		} else {
+			thermal_icl_ma =
+				(int)chip->thermal_mitigation[chip->therm_lvl_sel];
 		}
 		rc = vote(chip->usb_icl_votable, THERMAL_ICL_VOTER, true,
 					thermal_icl_ma);
@@ -4764,12 +4781,21 @@ static int smbchg_restricted_charging(struct smbchg_chip *chip, bool enable)
 	return rc;
 }
 
+/*Modifiy by HQ-zmc [Date: 2018-04-04 15:23:36]*/
+static bool tp_usb_plugin;
+
+bool *check_charge_mode(void){
+	  return &tp_usb_plugin;
+}
+
 static void handle_usb_removal(struct smbchg_chip *chip)
 {
 	struct power_supply *parallel_psy = get_parallel_psy(chip);
 	union power_supply_propval pval = {0, };
 	int rc;
 
+	tp_usb_plugin = 0;
+	
 	pr_smb(PR_STATUS, "triggered\n");
 	smbchg_aicl_deglitch_wa_check(chip);
 	/* Clear the OV detected status set before */
@@ -4836,6 +4862,8 @@ static void handle_usb_insertion(struct smbchg_chip *chip)
 	int rc;
 	char *usb_type_name = "null";
 
+	tp_usb_plugin = 1;
+	
 	pr_smb(PR_STATUS, "triggered\n");
 	/* usb inserted */
 	read_usb_type(chip, &usb_type_name, &usb_supply_type);
